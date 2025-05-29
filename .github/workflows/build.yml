@@ -10,22 +10,34 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
+      PATH: ${{ github.workspace }}/android-sdk/cmdline-tools/latest/bin:${{ github.workspace }}/android-sdk/platform-tools:${{ github.workspace }}/android-sdk/build-tools/33.0.0:${{ env.PATH }}
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
-
     - name: Install system dependencies
       run: |
         sudo apt update
-        sudo apt install -y \
-          git zip unzip openjdk-17-jdk autoconf libtool pkg-config \
-          zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 \
-          cmake libffi-dev libssl-dev python3-pip
+        sudo apt install -y openjdk-17-jdk wget unzip python3-pip
+
+    - name: Download Android Command Line Tools
+      run: |
+        mkdir -p android-sdk/cmdline-tools
+        wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip
+        unzip cmdline-tools.zip -d android-sdk/cmdline-tools
+        mv android-sdk/cmdline-tools/cmdline-tools android-sdk/cmdline-tools/latest
+        rm cmdline-tools.zip
+
+    - name: Accept Android SDK licenses
+      run: |
+        yes | ${{ github.workspace }}/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses
+
+    - name: Install Android SDK packages
+      run: |
+        ${{ github.workspace }}/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0"
 
     - name: Install Apache Ant
       run: |
@@ -34,23 +46,10 @@ jobs:
         sudo mv apache-ant-1.9.4 /opt/
         sudo ln -sf /opt/apache-ant-1.9.4/bin/ant /usr/local/bin/ant
 
-    - name: Install Buildozer & dependencies
+    - name: Install Python dependencies
       run: |
-        pip install --upgrade pip
-        pip install cython buildozer kivy
-
-    - name: Set environment variables
-      run: |
-        echo "ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk" >> $GITHUB_ENV
-        echo "PATH=$PATH:$ANDROID_HOME/tools:$ANDROID_HOME/platform-tools" >> $GITHUB_ENV
-
-    - name: Pre-download SDK + Build Tools
-      run: |
-        mkdir -p $HOME/.buildozer/android/platform
-        cd $HOME/.buildozer/android/platform
-        git clone https://github.com/kivy/python-for-android
-        cd python-for-android
-        python3 -m pip install -e .
+        pip3 install --upgrade pip
+        pip3 install cython buildozer kivy
 
     - name: Initialize buildozer
       run: buildozer init || true
