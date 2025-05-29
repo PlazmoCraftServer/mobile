@@ -19,13 +19,16 @@ jobs:
       with:
         python-version: '3.9'
 
-    - name: Install dependencies
+    - name: Install system dependencies
       run: |
         sudo apt update
         sudo apt install -y \
           git zip unzip openjdk-17-jdk autoconf libtool pkg-config \
           zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake \
           libffi-dev libssl-dev python3-pip
+
+    - name: Install Python dependencies
+      run: |
         pip install --upgrade pip
         pip install cython
         pip install buildozer
@@ -36,15 +39,19 @@ jobs:
         wget https://archive.apache.org/dist/ant/binaries/apache-ant-1.9.4-bin.tar.gz
         tar -xvzf apache-ant-1.9.4-bin.tar.gz
         sudo mv apache-ant-1.9.4 /opt/
+        sudo rm -f /usr/bin/ant
         sudo ln -s /opt/apache-ant-1.9.4/bin/ant /usr/bin/ant
         echo "ANT_HOME=/opt/apache-ant-1.9.4" | sudo tee -a /etc/environment
-        echo "PATH=\$ANT_HOME/bin:\$PATH" | sudo tee -a /etc/environment
+        echo 'PATH=$ANT_HOME/bin:$PATH' | sudo tee -a /etc/environment
 
-    - name: Initialize buildozer
+    - name: Initialize buildozer (if needed)
       run: buildozer init || true
 
     - name: Build APK
-      run: buildozer android debug
+      run: |
+        export ANT_HOME=/opt/apache-ant-1.9.4
+        export PATH=$ANT_HOME/bin:$PATH
+        buildozer android debug
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
