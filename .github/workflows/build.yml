@@ -1,4 +1,5 @@
 name: Build APK
+
 on:
   push:
     branches: [ main ]
@@ -8,187 +9,363 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
 
-    - name: Update package lists with retry
+    - name: Set up Android SDK
       run: |
-        # Retry apt update multiple times to handle temporary repository issues
-        for i in {1..3}; do
-          if sudo apt update; then
-            break
-          else
-            echo "apt update failed, retrying in 10 seconds... ($i/3)"
-            sleep 10
-          fi
-        done
-        
-    - name: Install system dependencies with retry and alternatives
-      run: |
-        # Install dependencies with retry mechanism and alternative repositories
-        sudo apt install -y --fix-missing \
-          git zip unzip wget tar openjdk-17-jdk autoconf libtool pkg-config \
-          zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake \
-          libffi-dev libssl-dev python3-pip python3-venv || \
-        sudo apt install -y --fix-missing --no-install-recommends \
-          git zip unzip wget tar openjdk-17-jdk autoconf libtool pkg-config \
-          zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake \
-          libffi-dev libssl-dev python3-pip python3-venv
-          
-    - name: Set up Python environment
-      run: |
-        python3 -m pip install --upgrade pip setuptools wheel
-        python3 -m pip install --user cython
-        
-    - name: Install Buildozer and dependencies
-      run: |
-        python3 -m pip install --user buildozer
-        python3 -m pip install --user kivy kivymd plyer
-        
-    - name: Set up Android development environment
-      run: |
-        # Create Android SDK directory
+        # Установка зависимостей
+        sudo apt update
+        sudo apt install -y wget unzip tar openjdk-17-jdk
+
+        # Установка SDK
         mkdir -p $HOME/android-sdk
         export ANDROID_HOME=$HOME/android-sdk
         export ANDROID_SDK_ROOT=$ANDROID_HOME
-        
-        # Download and install Android command line tools
-        cd $HOME
-        wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-        unzip commandlinetools-linux-9477386_latest.zip
-        
-        # Properly organize the command line tools
+
+        # Скачиваем командные инструменты SDK
+        wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O commandlinetools-linux.zip
+        unzip commandlinetools-linux.zip -d $ANDROID_HOME
+        rm commandlinetools-linux.zip
+
+        # Создаем необходимые каталоги
         mkdir -p $ANDROID_HOME/cmdline-tools/latest
-        mv cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
-        rmdir cmdline-tools
-        
-        # Set up environment variables
+        mv $ANDROID_HOME/cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
+        rmdir $ANDROID_HOME/cmdline-tools
+
+        # Устанавливаем компоненты SDK
+        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "build-tools;30.0.3" "platforms;android-30" "ndk;21.4.7075529"
+
+        # Устанавливаем пути для SDK и NDK
         echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
         echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
         echo "$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/30.0.3" >> $GITHUB_PATH
-        
-    - name: Accept Android SDK licenses and install components
+
+    - name: Install Buildozer and dependencies
       run: |
-        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
-        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;30.0.3"
-        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-30"
-        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools"
-        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;21.4.7075529"
-        # Install AIDL as part of build-tools
-        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;30.0.3" "platform-tools" "platforms;android-30" "ndk;21.4.7075529"
-        
-    - name: Install Apache Ant
+        python3 -m pip install --upgrade pip setuptools wheel
+        python3 -m pip install buildozer cython kivy kivymd plyer
+
+    - name: Prepare Android build environment
       run: |
-        cd $HOME
-        wget https://archive.apache.org/dist/ant/binaries/apache-ant-1.10.12-bin.tar.gz
-        tar -xzf apache-ant-1.10.12-bin.tar.gz
-        export ANT_HOME=$HOME/apache-ant-1.10.12
-        echo "ANT_HOME=$ANT_HOME" >> $GITHUB_ENV
-        echo "$ANT_HOME/bin" >> $GITHUB_PATH
-        
-    - name: Check project structure and create main.py if needed
-      run: |
-        echo "Checking project structure..."
-        ls -la
-        
-        # Check if main.py exists, create a simple one if it doesn't
+        # Создаем main.py, если его нет
         if [ ! -f main.py ]; then
-          echo "Creating basic main.py file..."
+          echo "Создаю main.py..."
           cat > main.py << 'EOF'
-        from kivy.app import App
-        from kivy.uix.label import Label
-        from kivy.uix.boxlayout import BoxLayout
-        from kivy.uix.button import Button
+        import json
+import http.client
+from threading import Thread
+from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.textinput import TextInput
+from kivy.uix.button import Button
+from kivy.uix.spinner import Spinner
+from kivy.uix.label import Label
+from kivy.clock import Clock
+from kivy.uix.popup import Popup
+from kivy.metrics import dp
+from kivy.core.window import Window
+
+# Устанавливаем размер окна для тестирования
+Window.size = (400, 600)
+
+class TranslatorApp(App):
+    def __init__(self):
+        super().__init__()
+        self.translation_result = ""
+        self.translation_error = ""
         
-        class TranslatorApp(App):
-            def build(self):
-                layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
-                
-                label = Label(text='Translator App', 
-                             font_size='20sp',
-                             size_hint=(1, 0.5))
-                
-                button = Button(text='Translate', 
-                               size_hint=(1, 0.5))
-                
-                layout.add_widget(label)
-                layout.add_widget(button)
-                
-                return layout
+    def build(self):
+        # Основной контейнер
+        main_layout = BoxLayout(orientation='vertical', spacing=dp(10), padding=dp(15))
         
-        if __name__ == '__main__':
-            TranslatorApp().run()
+        # Заголовок
+        title = Label(
+            text='🌍 Переводчик',
+            size_hint_y=None,
+            height=dp(40),
+            font_size=dp(18),
+            color=(0.2, 0.2, 0.2, 1)
+        )
+        main_layout.add_widget(title)
+        
+        # Контейнер для выбора языков
+        lang_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(40), spacing=dp(5))
+        
+        # Исходный язык
+        source_label = Label(text='Из:', size_hint_x=None, width=dp(30), font_size=dp(12))
+        self.source_spinner = Spinner(
+            text='Авто',
+            values=['Авто', 'Русский', 'English', 'Español', 'Français', 'Deutsch', 'Italiano', 'Português', '中文', '日本語', '한국어', 'العربية', 'हिन्दी', 'Türkçe'],
+            size_hint_x=0.4,
+            font_size=dp(11)
+        )
+        
+        # Кнопка смены языков
+        swap_btn = Button(
+            text='⇄',
+            size_hint_x=None,
+            width=dp(40),
+            font_size=dp(16)
+        )
+        swap_btn.bind(on_press=self.swap_languages)
+        
+        # Целевой язык
+        target_label = Label(text='В:', size_hint_x=None, width=dp(20), font_size=dp(12))
+        self.target_spinner = Spinner(
+            text='Русский',
+            values=['Русский', 'English', 'Español', 'Français', 'Deutsch', 'Italiano', 'Português', '中文', '日本語', '한국어', 'العربية', 'हिन्दी', 'Türkçe'],
+            size_hint_x=0.4,
+            font_size=dp(11)
+        )
+        
+        lang_layout.add_widget(source_label)
+        lang_layout.add_widget(self.source_spinner)
+        lang_layout.add_widget(swap_btn)
+        lang_layout.add_widget(target_label)
+        lang_layout.add_widget(self.target_spinner)
+        
+        main_layout.add_widget(lang_layout)
+        
+        # Поле ввода
+        input_label = Label(text='Введите текст:', size_hint_y=None, height=dp(25), font_size=dp(12), halign='left')
+        input_label.bind(size=input_label.setter('text_size'))
+        main_layout.add_widget(input_label)
+        
+        self.input_text = TextInput(
+            multiline=True,
+            hint_text='Введите текст для перевода...',
+            size_hint_y=None,
+            height=dp(120),
+            font_size=dp(14)
+        )
+        main_layout.add_widget(self.input_text)
+        
+        # Кнопки
+        button_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(40), spacing=dp(10))
+        
+        self.translate_btn = Button(
+            text='Перевести',
+            font_size=dp(14),
+            background_color=(0.29, 0.56, 0.89, 1)
+        )
+        self.translate_btn.bind(on_press=self.translate_text)
+        
+        clear_btn = Button(
+            text='Очистить',
+            font_size=dp(14),
+            background_color=(0.8, 0.8, 0.8, 1)
+        )
+        clear_btn.bind(on_press=self.clear_text)
+        
+        button_layout.add_widget(self.translate_btn)
+        button_layout.add_widget(clear_btn)
+        main_layout.add_widget(button_layout)
+        
+        # Поле результата
+        output_label = Label(text='Перевод:', size_hint_y=None, height=dp(25), font_size=dp(12), halign='left')
+        output_label.bind(size=output_label.setter('text_size'))
+        main_layout.add_widget(output_label)
+        
+        self.output_text = TextInput(
+            multiline=True,
+            readonly=True,
+            hint_text='Здесь появится перевод...',
+            size_hint_y=None,
+            height=dp(120),
+            font_size=dp(14),
+            background_color=(0.95, 0.95, 0.95, 1)
+        )
+        main_layout.add_widget(self.output_text)
+        
+        # Статус
+        self.status_label = Label(
+            text='Готов к переводу',
+            size_hint_y=None,
+            height=dp(25),
+            font_size=dp(10),
+            color=(0.5, 0.5, 0.5, 1)
+        )
+        main_layout.add_widget(self.status_label)
+        
+        return main_layout
+    
+    def get_lang_code(self, lang_name):
+        """Получение кода языка по названию"""
+        lang_map = {
+            'Авто': 'auto',
+            'Русский': 'ru',
+            'English': 'en',
+            'Español': 'es',
+            'Français': 'fr',
+            'Deutsch': 'de',
+            'Italiano': 'it',
+            'Português': 'pt',
+            '中文': 'zh',
+            '日本語': 'ja',
+            '한국어': 'ko',
+            'العربية': 'ar',
+            'हिन्दी': 'hi',
+            'Türkçe': 'tr'
+        }
+        return lang_map.get(lang_name, 'auto')
+    
+    def swap_languages(self, instance):
+        """Смена языков местами"""
+        if self.source_spinner.text == 'Авто':
+            self.show_popup('Ошибка', 'Нельзя поменять местами с авто-определением')
+            return
+        
+        source_text = self.source_spinner.text
+        target_text = self.target_spinner.text
+        
+        # Меняем языки
+        if source_text in self.target_spinner.values:
+            self.target_spinner.text = source_text
+        if target_text in self.source_spinner.values:
+            self.source_spinner.text = target_text
+        
+        # Меняем тексты
+        input_text = self.input_text.text
+        output_text = self.output_text.text
+        
+        if output_text and output_text.strip():
+            self.input_text.text = output_text
+            self.output_text.text = input_text
+    
+    def translate_text(self, instance):
+        """Запуск перевода"""
+        text = self.input_text.text.strip()
+        if not text:
+            self.show_popup('Ошибка', 'Введите текст для перевода')
+            return
+        
+        source_lang = self.get_lang_code(self.source_spinner.text)
+        target_lang = self.get_lang_code(self.target_spinner.text)
+        
+        if source_lang == target_lang and source_lang != 'auto':
+            self.show_popup('Ошибка', 'Исходный и целевой языки должны отличаться')
+            return
+        
+        # Блокируем кнопку
+        self.translate_btn.text = 'Переводим...'
+        self.translate_btn.disabled = True
+        self.status_label.text = 'Выполняется перевод...'
+        
+        # Запускаем перевод в отдельном потоке
+        thread = Thread(target=self.do_translation, args=(text, source_lang, target_lang))
+        thread.daemon = True
+        thread.start()
+        
+        # Проверяем результат каждые 0.1 секунды
+        Clock.schedule_interval(self.check_translation_result, 0.1)
+    
+    def do_translation(self, text, source_lang, target_lang):
+        """Выполнение перевода в отдельном потоке"""
+        try:
+            conn = http.client.HTTPSConnection("deep-translate1.p.rapidapi.com")
+            payload = json.dumps({
+                "q": text,
+                "source": source_lang,
+                "target": target_lang
+            })
+            headers = {
+                'x-rapidapi-key': "db66b9db65msh1e925d637b4e831p18d7f5jsn790bb6ed72b2",
+                'x-rapidapi-host': "deep-translate1.p.rapidapi.com",
+                'Content-Type': "application/json"
+            }
+            
+            conn.request("POST", "/language/translate/v2", payload, headers)
+            res = conn.getresponse()
+            data = res.read()
+            
+            response = json.loads(data.decode("utf-8"))
+            
+            if 'data' in response and 'translations' in response['data']:
+                translations = response['data']['translations']
+                
+                if 'translatedText' in translations:
+                    translated_text = translations['translatedText']
+                    if isinstance(translated_text, list) and len(translated_text) > 0:
+                        translated_text = translated_text[0]
+                    elif not isinstance(translated_text, str):
+                        translated_text = str(translated_text)
+                    
+                    self.translation_result = translated_text
+                else:
+                    self.translation_error = "Поле 'translatedText' не найдено в ответе"
+            else:
+                self.translation_error = f"Неожиданная структура ответа: {response}"
+                
+        except Exception as e:
+            self.translation_error = f"Ошибка перевода: {str(e)}"
+    
+    def check_translation_result(self, dt):
+        """Проверка результата перевода"""
+        if self.translation_result:
+            self.output_text.text = self.translation_result
+            self.status_label.text = 'Перевод выполнен'
+            self.translation_result = ""
+            self.restore_translate_button()
+            return False
+        
+        if self.translation_error:
+            self.show_popup('Ошибка', self.translation_error)
+            self.translation_error = ""
+            self.restore_translate_button()
+            return False
+        
+        return True
+    
+    def restore_translate_button(self):
+        """Восстановление кнопки перевода"""
+        self.translate_btn.text = 'Перевести'
+        self.translate_btn.disabled = False
+    
+    def clear_text(self, instance):
+        """Очистка полей"""
+        self.input_text.text = ''
+        self.output_text.text = ''
+        self.status_label.text = 'Поля очищены'
+    
+    def show_popup(self, title, message):
+        """Показ всплывающего окна"""
+        popup = Popup(
+            title=title,
+            content=Label(text=message),
+            size_hint=(0.8, 0.3)
+        )
+        popup.open()
+
+if __name__ == '__main__':
+    TranslatorApp().run()
         EOF
         fi
-        
-        # Check buildozer.spec
-        if [ ! -f buildozer.spec ]; then
-          echo "buildozer.spec not found, initializing..."
-          buildozer init
-        fi
-        
-        echo "Project files:"
-        ls -la
-        
-    - name: Initialize buildozer configuration
-      run: |
-        # Ensure buildozer.spec exists and is configured properly
+
+        # Инициализация buildozer
         if [ ! -f buildozer.spec ]; then
           buildozer init
         fi
-        
-    - name: Configure buildozer for CI environment
+
+    - name: Configure buildozer.spec for CI environment
       run: |
-        # Update buildozer.spec for CI environment
+        # Обновляем настройки buildozer.spec
         sed -i 's/title = My Application/title = Translator App/' buildozer.spec
         sed -i 's/package.name = myapp/package.name = translator/' buildozer.spec
         sed -i 's/package.domain = org.example/package.domain = com.translator/' buildozer.spec
-        
-        # Set Android SDK and NDK paths
-        sed -i 's/#android.sdk_path =.*/android.sdk_path = \/home\/runner\/android-sdk/' buildozer.spec
-        sed -i 's/#android.ndk_path =.*/android.ndk_path = \/home\/runner\/android-sdk\/ndk\/21.4.7075529/' buildozer.spec
-        sed -i 's/#android.ant_path =.*/android.ant_path = \/home\/runner\/apache-ant-1.10.12\/bin\/ant/' buildozer.spec
-        
-        # Set architecture and API levels
-        sed -i 's/#android.archs = arm64-v8a, armeabi-v7a/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
-        sed -i 's/#android.api = 28/android.api = 30/' buildozer.spec
-        sed -i 's/#android.minapi = 21/android.minapi = 21/' buildozer.spec
-        sed -i 's/#android.ndk_api = 21/android.ndk_api = 21/' buildozer.spec
-        
-        # Ensure requirements include kivy
-        sed -i 's/requirements = python3,kivy/requirements = python3,kivy,kivymd/' buildozer.spec
-        
-        echo "Updated buildozer.spec:"
-        cat buildozer.spec | grep -E "(title|package|android\.|requirements)"
-        
-    - name: Build APK with detailed logging
+
+        # Настройка путей SDK и NDK
+        sed -i 's|#android.sdk_path =|android.sdk_path = $ANDROID_HOME|' buildozer.spec
+        sed -i 's|#android.ndk_path =|android.ndk_path = $ANDROID_HOME/ndk/21.4.7075529|' buildozer.spec
+        sed -i 's|#android.ant_path =|android.ant_path = $HOME/apache-ant-1.10.12/bin/ant|' buildozer.spec
+
+    - name: Build APK with Buildozer
       run: |
-        echo "Starting buildozer android debug..."
         buildozer android debug --verbose
-        
-    - name: Find and list generated APK files
-      run: |
-        echo "Searching for APK files..."
-        find . -name "*.apk" -type f -exec ls -la {} \;
-        echo "Contents of bin directory:"
-        ls -la bin/ 2>/dev/null || echo "bin directory does not exist"
-        echo "Contents of .buildozer directory structure:"
-        find .buildozer -name "*.apk" -type f 2>/dev/null || echo "No APK files found in .buildozer"
-        
-    - name: Copy APK to bin directory
-      run: |
-        mkdir -p bin
-        # Find APK files and copy them to bin directory
-        if find .buildozer -name "*.apk" -type f | head -1 | xargs -I {} cp {} bin/ 2>/dev/null; then
-            echo "APK copied to bin directory successfully"
-            ls -la bin/
-        else
-            echo "No APK file found to copy"
-            exit 1
-        fi
-        
+
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
