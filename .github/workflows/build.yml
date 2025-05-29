@@ -10,10 +10,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    env:
-      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
-      PATH: ${{ github.workspace }}/android-sdk/cmdline-tools/latest/bin:${{ github.workspace }}/android-sdk/platform-tools:${{ github.workspace }}/android-sdk/build-tools/33.0.0:${PATH}
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
@@ -21,35 +17,24 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt update
-        sudo apt install -y openjdk-17-jdk wget unzip python3-pip
+        sudo apt install -y \
+          git zip unzip wget tar openjdk-17-jdk autoconf libtool pkg-config \
+          zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake \
+          libffi-dev libssl-dev python3-pip
 
-    - name: Download Android Command Line Tools
+    - name: Install Python dependencies
       run: |
-        mkdir -p android-sdk/cmdline-tools
-        wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip
-        unzip cmdline-tools.zip -d android-sdk/cmdline-tools
-        mv android-sdk/cmdline-tools/cmdline-tools android-sdk/cmdline-tools/latest
-        rm cmdline-tools.zip
-
-    - name: Accept Android SDK licenses
-      run: |
-        yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses
-
-    - name: Install Android SDK packages
-      run: |
-        $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0"
+        python3 -m pip install --upgrade pip
+        pip install cython buildozer kivy
 
     - name: Install Apache Ant
       run: |
         wget https://archive.apache.org/dist/ant/binaries/apache-ant-1.9.4-bin.tar.gz
         tar -xvzf apache-ant-1.9.4-bin.tar.gz
         sudo mv apache-ant-1.9.4 /opt/
-        sudo ln -sf /opt/apache-ant-1.9.4/bin/ant /usr/local/bin/ant
-
-    - name: Install Python dependencies
-      run: |
-        pip3 install --upgrade pip
-        pip3 install cython buildozer kivy
+        if [ ! -f /usr/bin/ant ]; then
+          sudo ln -s /opt/apache-ant-1.9.4/bin/ant /usr/bin/ant
+        fi
 
     - name: Initialize buildozer
       run: buildozer init || true
@@ -57,7 +42,7 @@ jobs:
     - name: Build APK
       run: buildozer android debug
 
-    - name: Upload APK
+    - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
         name: translator-apk
