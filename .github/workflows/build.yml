@@ -24,34 +24,39 @@ jobs:
         sudo apt update
         sudo apt install -y \
           git zip unzip openjdk-17-jdk autoconf libtool pkg-config \
-          zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake \
-          libffi-dev libssl-dev python3-pip
-
-    - name: Install Python dependencies
-      run: |
-        pip install --upgrade pip
-        pip install cython
-        pip install buildozer
-        pip install kivy
+          zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 \
+          cmake libffi-dev libssl-dev python3-pip
 
     - name: Install Apache Ant
       run: |
         wget https://archive.apache.org/dist/ant/binaries/apache-ant-1.9.4-bin.tar.gz
         tar -xvzf apache-ant-1.9.4-bin.tar.gz
         sudo mv apache-ant-1.9.4 /opt/
-        sudo rm -f /usr/bin/ant
-        sudo ln -s /opt/apache-ant-1.9.4/bin/ant /usr/bin/ant
-        echo "ANT_HOME=/opt/apache-ant-1.9.4" | sudo tee -a /etc/environment
-        echo 'PATH=$ANT_HOME/bin:$PATH' | sudo tee -a /etc/environment
+        sudo ln -sf /opt/apache-ant-1.9.4/bin/ant /usr/local/bin/ant
 
-    - name: Initialize buildozer (if needed)
+    - name: Install Buildozer & dependencies
+      run: |
+        pip install --upgrade pip
+        pip install cython buildozer kivy
+
+    - name: Set environment variables
+      run: |
+        echo "ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk" >> $GITHUB_ENV
+        echo "PATH=$PATH:$ANDROID_HOME/tools:$ANDROID_HOME/platform-tools" >> $GITHUB_ENV
+
+    - name: Pre-download SDK + Build Tools
+      run: |
+        mkdir -p $HOME/.buildozer/android/platform
+        cd $HOME/.buildozer/android/platform
+        git clone https://github.com/kivy/python-for-android
+        cd python-for-android
+        python3 -m pip install -e .
+
+    - name: Initialize buildozer
       run: buildozer init || true
 
     - name: Build APK
-      run: |
-        export ANT_HOME=/opt/apache-ant-1.9.4
-        export PATH=$ANT_HOME/bin:$PATH
-        buildozer android debug
+      run: buildozer android debug
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
