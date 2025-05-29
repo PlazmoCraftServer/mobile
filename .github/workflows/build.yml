@@ -37,6 +37,8 @@ jobs:
         tar -xvzf apache-ant-1.9.4-bin.tar.gz
         sudo mv apache-ant-1.9.4 /opt/
         sudo ln -s /opt/apache-ant-1.9.4/bin/ant /usr/bin/ant
+        echo "ANT_HOME=/opt/apache-ant-1.9.4" | sudo tee -a /etc/environment
+        echo "PATH=\$ANT_HOME/bin:\$PATH" | sudo tee -a /etc/environment
 
     - name: Initialize buildozer
       run: buildozer init || true
