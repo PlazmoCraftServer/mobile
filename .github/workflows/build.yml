@@ -31,6 +31,13 @@ jobs:
         pip install buildozer
         pip install kivy
 
+    - name: Install Apache Ant
+      run: |
+        wget https://archive.apache.org/dist/ant/binaries/apache-ant-1.9.4-bin.tar.gz
+        tar -xvzf apache-ant-1.9.4-bin.tar.gz
+        sudo mv apache-ant-1.9.4 /opt/
+        sudo ln -s /opt/apache-ant-1.9.4/bin/ant /usr/bin/ant
+
     - name: Initialize buildozer
       run: buildozer init || true
 
